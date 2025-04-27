@@ -14,12 +14,13 @@ from dbt_checkpoint.utils import JsonOpenError, add_default_args, get_dbt_manife
 def get_ref_from_name(
     manifest: Dict[str, Any], tables: Set[str]
 ) -> Generator[Tuple[str, str], None, None]:
-    table_names = {table.split(".")[-1]: table for table in tables}
+    table_names = {table.split(".")[-1].lower(): table for table in tables}
     models = manifest.get("nodes", {})
     for _, value in models.items():
-        # model name has to be unique
         model_name = value.get("alias")
-        table = table_names.pop(model_name, None)
+        if not model_name:
+            continue
+        table = table_names.pop(model_name.lower(), None)
         if table:
             tables.remove(table)
             model_ref = "{{ ref('%s') }}" % model_name
@@ -30,21 +31,18 @@ def get_source_from_name(
     manifest: Dict[str, Any], tables: Set[str]
 ) -> Generator[Tuple[str, str], None, None]:
     if tables:
-        table_names = {table: set(table.split(".")) for table in tables}
+        table_names = {table.lower(): set(part.lower() for part in table.split(".")) for table in tables}
         sources = manifest.get("sources", {})
         for _, value in sources.items():
-            source = {value.get("database"), value.get("schema"), value.get("name")}
-            table = None  # pragma: no mutate
+            source = {value.get("database", "").lower(), value.get("schema", "").lower(), value.get("name", "").lower()}
             for table_name, table_split in table_names.items():
                 if source.issuperset(table_split):
-                    table = table_name
-            if table:
-                tables.remove(table)
-                source_ref = "{{ source('%s', '%s') }}" % (
-                    value.get("source_name"),
-                    value.get("name"),
-                )
-                yield (table, source_ref)
+                    tables.remove(next(t for t in tables if t.lower() == table_name))
+                    source_ref = "{{ source('%s', '%s') }}" % (
+                        value.get("source_name"),
+                        value.get("name"),
+                    )
+                    yield (table_name, source_ref)
 
 
 def get_unknown_source(tables: Set[str]) -> Generator[Tuple[str, str], None, None]:
@@ -92,9 +90,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 get_unknown_source(tables),
             )
             for replacement in to_replace:
-                old = r"([\\\s\n\r\t])" + replacement[0] + r"([\\\s\n\r\t])"
-                new = r"\1" + replacement[1] + r"\2"
-                sql = re.sub(old, new, sql, re.IGNORECASE)
+                pattern = re.compile(
+                    rf"(?<![\w]){re.escape(replacement[0])}(?![\w])",  # avoid partial word matches
+                    flags=re.IGNORECASE
+                )
+                sql = pattern.sub(replacement[1], sql)
             file.write_text(sql, encoding="utf-8")
     end_time = time.time()
     script_args = vars(args)
