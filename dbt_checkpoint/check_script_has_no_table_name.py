@@ -19,6 +19,7 @@ REGEX_SPLIT = r"[\s]+"
 IGNORE_WORDS = ["", "(", "{{", "{", "null"]  # pragma: no mutate
 REGEX_PARENTHESIS = r"([\(\)])"  # pragma: no mutate
 REGEX_BRACES = r"([\{\}])"  # pragma: no mutate
+REGEX_COMMA = r"(,)" #pragma: no mutate
 
 # Add these new constants with type annotations
 COMMON_SQL_FUNCTIONS: List[str] = ["extract", "substring", "trim", "unnest", "filter"]
@@ -53,6 +54,8 @@ def add_space_to_parenthesis(sql: str) -> str:
 def add_space_to_braces(sql: str) -> str:
     return re.sub(REGEX_BRACES, r" \1 ", sql)
 
+def add_space_to_comma(sql: str) -> str:
+    return re.sub(REGEX_COMMA, r" \1 ", sql)
 
 def add_space_to_source_ref(sql: str) -> str:
     return sql.replace("{{", "{{ ").replace("}}", " }}")
@@ -74,6 +77,7 @@ def has_table_name(
     sql_clean = replace_string_literals(sql_clean)
     sql_clean = add_space_to_parenthesis(sql_clean)
     sql_clean = add_space_to_braces(sql_clean)
+    sql_clean = add_space_to_comma(sql_clean)
     sql_clean = add_space_to_source_ref(sql_clean)
     sql_split = re.split(REGEX_SPLIT, sql_clean)
     tables = set()
