@@ -93,28 +93,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         status_code_file, tables = has_table_name(sql, filename)
         if status_code_file:
             status_code = status_code_file
-            modified_sql = []
-            sql_to_change = ''
-            parsed = sqlparse.parse(sql)[0]
             to_replace = itertools.chain(
                 get_ref_from_name(manifest, tables),
                 get_source_from_name(manifest, tables),
                 get_unknown_source(tables),
             )
-            for token in parsed.flatten():
-                if token.ttype in (sqlparse.tokens.Comment.Single,
-                                   sqlparse.tokens.Comment.Multiline):
-                    # Keep comments unchanged
-                    changed_sql = replace_with_reference(sql_to_change, to_replace)
-                    modified_sql.append(changed_sql)
-                    sql_to_change = []
-                    modified_sql.append(str(token))
-                else:
-                    # Apply replacements to non-comment tokens
-                    token_str = str(token)
-                    sql_to_change += token_str
-            changed_sql = replace_with_reference(sql_to_change, to_replace)
-            modified_sql.append(''.join(changed_sql))
+
+            modified_sql = []
+            sql_statements = sqlparse.parse(sql)
+            for sql_statement in sql_statements:
+                sql_to_change = ''
+                for token in sql_statement.flatten():
+                    if token.ttype in (sqlparse.tokens.Comment.Single,
+                                       sqlparse.tokens.Comment.Multiline):
+                        # Keep comments unchanged
+                        changed_sql = replace_with_reference(sql_to_change, to_replace)
+                        modified_sql.append(changed_sql)
+                        sql_to_change = []
+                        modified_sql.append(str(token))
+                    else:
+                        # Apply replacements to non-comment tokens
+                        token_str = str(token)
+                        sql_to_change += token_str
+                changed_sql = replace_with_reference(sql_to_change, to_replace)
+                modified_sql.append(''.join(changed_sql))
             file.write_text(''.join(modified_sql), encoding="utf-8")
     end_time = time.time()
     script_args = vars(args)
