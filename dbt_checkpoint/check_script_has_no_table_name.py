@@ -149,7 +149,7 @@ def has_table_name(
         ):  # pragma: no mutate
             cte.add(prev.lower() if prev else prev)
 
-    table_names = tables.difference(cte).difference({"table"})  # added table to fix issue with FROM TABLE
+    table_names = tables.difference(cte).difference({"table"}).difference({"lateral"})  # added table to fix issue with FROM TABLE or LATERAL
     if table_names:
         status_code = 1
     return status_code, table_names
