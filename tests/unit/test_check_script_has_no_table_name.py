@@ -466,6 +466,61 @@ select * from unioned
         1,
         {"actual_table"},
     ),
+    # "IS NOT DISTINCT FROM" is the negated form of the same operator. The
+    # guard matched only "IS DISTINCT FROM", so the operand after FROM was
+    # collected as a table and rewritten into a source() that does not exist.
+    (
+        """
+    SELECT *
+    FROM {{ ref('model') }} rv
+    LEFT JOIN {{ ref('other') }} st
+        ON rv.route_id IS NOT DISTINCT FROM st.route_id
+    """,
+        [],
+        True,
+        True,
+        0,
+        {},
+    ),
+    (
+        """
+    SELECT *
+    FROM {{ ref('model') }}
+    WHERE col_a IS NOT DISTINCT FROM col_b
+      AND col_c IS DISTINCT FROM col_d
+    """,
+        [],
+        True,
+        True,
+        0,
+        {},
+    ),
+    # A genuine hardcoded table after a real FROM is still reported, so the
+    # negated-operator guard does not swallow actual findings.
+    (
+        """
+    SELECT *
+    FROM schema1.hardcoded
+    WHERE a IS NOT DISTINCT FROM b
+    """,
+        [],
+        True,
+        True,
+        1,
+        {"schema1.hardcoded"},
+    ),
+    # OVERLAY's FROM operand is a start position, not a table.
+    (
+        """
+    SELECT OVERLAY(col PLACING 'x' FROM 2 FOR 3)
+    FROM {{ ref('model') }}
+    """,
+        [],
+        True,
+        True,
+        0,
+        {},
+    ),
 )
 
 

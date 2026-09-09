@@ -22,7 +22,16 @@ REGEX_BRACES = r"([\{\}])"  # pragma: no mutate
 REGEX_COMMA = r"(,)" #pragma: no mutate
 
 # Add these new constants with type annotations
-COMMON_SQL_FUNCTIONS: List[str] = ["extract", "substring", "trim", "unnest", "filter"]
+COMMON_SQL_FUNCTIONS: List[str] = [
+    "extract",
+    "substring",
+    "trim",
+    "unnest",
+    "filter",
+    # OVERLAY(str PLACING sub FROM start [FOR len]) -- the FROM operand
+    # is a position, not a table.
+    "overlay",
+]
 ALLOWED_FROM_CONTEXTS: List[str] = ["distinct", "position", "unnest"]
 REGEX_STRING_LITERALS = r"'(?:[^']|'')*'"
 
@@ -88,10 +97,13 @@ def has_table_name(
     is_distinct_context = False
 
     for i, (prev, cur, nxt) in enumerate(prev_cur_next_iter(sql_split)):
-        # Track "IS DISTINCT FROM" expressions
+        # Track "IS [NOT] DISTINCT FROM" expressions. The operator is
+        # optionally negated, so the token before DISTINCT is "is" or "not";
+        # matching only "is" let the NOT form fall through and the operand
+        # after FROM be collected as a table name.
         if (
             prev
-            and prev.lower() == "is"
+            and prev.lower() in ("is", "not")
             and cur
             and cur.lower() == "distinct"
             and nxt
