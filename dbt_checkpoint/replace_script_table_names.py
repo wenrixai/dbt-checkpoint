@@ -4,6 +4,7 @@ import os
 import re
 import time
 import sqlparse
+import sqlparse.lexer
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional, Sequence, Set, Tuple
 
@@ -70,7 +71,7 @@ def replace_with_reference(sql, replacements):
             flags=re.IGNORECASE
         )
         sql = pattern.sub(replacement[1], sql)
-    return ''.join(sql)
+    return sql
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser()
@@ -93,30 +94,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         status_code_file, tables = has_table_name(sql, filename)
         if status_code_file:
             status_code = status_code_file
-            to_replace = itertools.chain(
-                get_ref_from_name(manifest, tables),
-                get_source_from_name(manifest, tables),
-                get_unknown_source(tables),
+            # Materialize the replacements: these generators remove entries
+            # from `tables` as they yield, so they can only be consumed once.
+            to_replace = list(
+                itertools.chain(
+                    get_ref_from_name(manifest, tables),
+                    get_source_from_name(manifest, tables),
+                    get_unknown_source(tables),
+                )
             )
 
             modified_sql = []
-            sql_statements = sqlparse.parse(sql)
-            for sql_statement in sql_statements:
-                sql_to_change = ''
-                for token in sql_statement.flatten():
-                    if token.ttype in (sqlparse.tokens.Comment.Single,
-                                       sqlparse.tokens.Comment.Multiline):
-                        # Keep comments unchanged
-                        changed_sql = replace_with_reference(sql_to_change, to_replace)
-                        modified_sql.append(changed_sql)
-                        sql_to_change = []
-                        modified_sql.append(str(token))
-                    else:
-                        # Apply replacements to non-comment tokens
-                        token_str = str(token)
-                        sql_to_change += token_str
-                changed_sql = replace_with_reference(sql_to_change, to_replace)
-                modified_sql.append(''.join(changed_sql))
+            sql_to_change = ''
+            # Lex rather than parse: identifying comments only needs the token
+            # stream, while sqlparse's grouping stage refuses any statement
+            # over MAX_GROUPING_TOKENS (10000) -- which large models exceed.
+            for ttype, value in sqlparse.lexer.tokenize(sql):
+                if ttype in (sqlparse.tokens.Comment.Single,
+                             sqlparse.tokens.Comment.Multiline):
+                    # Keep comments unchanged
+                    modified_sql.append(
+                        replace_with_reference(sql_to_change, to_replace)
+                    )
+                    sql_to_change = ''
+                    modified_sql.append(value)
+                else:
+                    # Apply replacements to non-comment tokens
+                    sql_to_change += value
+            modified_sql.append(replace_with_reference(sql_to_change, to_replace))
             file.write_text(''.join(modified_sql), encoding="utf-8")
     end_time = time.time()
     script_args = vars(args)
